@@ -115,87 +115,121 @@ function Wait-JblWinRt($operation, $resultType, $timeoutMs) {
   } catch { return $null }
 }
 
+function New-JblWinRtHandler($sourceType, $argsType, $queue) {
+  $generic = [Windows.Foundation.TypedEventHandler``2, Windows, ContentType = WindowsRuntime]
+  $delegateType = $generic.MakeGenericType([type[]]@($sourceType, $argsType))
+  $invoke = $delegateType.GetMethod("Invoke")
+  $parameters = [System.Linq.Expressions.ParameterExpression[]]@(
+    $invoke.GetParameters() | ForEach-Object {
+      [System.Linq.Expressions.Expression]::Parameter($_.ParameterType, $_.Name)
+    })
+  $enqueue = $queue.GetType().GetMethod("Enqueue")
+  $body = [System.Linq.Expressions.Expression]::Call(
+    [System.Linq.Expressions.Expression]::Constant($queue),
+    $enqueue,
+    [System.Linq.Expressions.Expression]::Convert($parameters[1], [object]))
+  return [System.Linq.Expressions.Expression]::Lambda($delegateType, $body, $parameters).Compile()
+}
+
+function Add-JblFlip7Diag($message) {
+  $script:jblFlip7Diag += [string]$message
+}
+
 function Get-JblFlip7Battery {
   $watcher = $null; $device = $null; $service = $null
-  $tx = $null; $rx = $null; $notifyId = $null
+  $tx = $null; $rx = $null; $scanToken = $null; $notifyToken = $null
+  $scanHandler = $null; $notifyHandler = $null
+  $scanQueue = $null; $notifyQueue = $null
+  $script:jblFlip7Diag = @()
   try {
     $script:tDevice = [Windows.Devices.Bluetooth.BluetoothLEDevice, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
     $script:tServices = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceServicesResult, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
     $script:tChars = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicsResult, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
     $script:tComm = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
 
+    $script:tWatcher = [Windows.Devices.Bluetooth.Advertisement.BluetoothLEAdvertisementWatcher, Windows, ContentType = WindowsRuntime]
+    $script:tAdvArgs = [Windows.Devices.Bluetooth.Advertisement.BluetoothLEAdvertisementReceivedEventArgs, Windows, ContentType = WindowsRuntime]
     $watcher = New-Object Windows.Devices.Bluetooth.Advertisement.BluetoothLEAdvertisementWatcher
     $watcher.ScanningMode = [Windows.Devices.Bluetooth.Advertisement.BluetoothLEScanningMode]::Active
-    $scanId = "JblFlip7Scan-" + [Guid]::NewGuid().ToString("N")
-    Register-ObjectEvent -InputObject $watcher -EventName Received -SourceIdentifier $scanId | Out-Null
+    $scanQueue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'
+    $scanHandler = New-JblWinRtHandler $script:tWatcher $script:tAdvArgs $scanQueue
+    $scanToken = $watcher.add_Received($scanHandler)
+    Add-JblFlip7Diag "BLE scan started"
     $watcher.Start()
     $address = [UInt64]0
-    $until = [DateTime]::UtcNow.AddSeconds(3)
+    $until = [DateTime]::UtcNow.AddSeconds(5)
     while ([DateTime]::UtcNow -lt $until -and $address -eq 0) {
-      $evt = Wait-Event -SourceIdentifier $scanId -Timeout 0.2
-      if (-not $evt) { continue }
-      try {
-        $advArgs = $evt.SourceArgs[1]
-        foreach ($manufacturer in $advArgs.Advertisement.ManufacturerData) {
-          if ($manufacturer.CompanyId -ne 0x0057) { continue }
-          $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($manufacturer.Data)
-          $bytes = New-Object byte[] $reader.UnconsumedBufferLength
-          $reader.ReadBytes($bytes)
-          if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x07 -and $bytes[1] -eq 0x21) {
-            $address = [UInt64]$advArgs.BluetoothAddress
-            break
-          }
+      $advArgs = $null
+      if (-not $scanQueue.TryDequeue([ref]$advArgs)) { Start-Sleep -Milliseconds 50; continue }
+      foreach ($manufacturer in $advArgs.Advertisement.ManufacturerData) {
+        if ($manufacturer.CompanyId -ne 0x0057) { continue }
+        $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($manufacturer.Data)
+        $bytes = New-Object byte[] $reader.UnconsumedBufferLength
+        $reader.ReadBytes($bytes)
+        if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x07 -and $bytes[1] -eq 0x21) {
+          $address = [UInt64]$advArgs.BluetoothAddress
+          Add-JblFlip7Diag ("matching advertisement " + ('{0:X12}' -f $address))
+          break
         }
-      } finally { Remove-Event -EventIdentifier $evt.EventIdentifier -ErrorAction SilentlyContinue }
+      }
     }
     $watcher.Stop()
-    Unregister-Event -SourceIdentifier $scanId -ErrorAction SilentlyContinue
-    if ($address -eq 0) { return @() }
+    if ($scanToken) { $watcher.remove_Received($scanToken); $scanToken = $null }
+    if ($address -eq 0) { Add-JblFlip7Diag "no matching 0x0057 / 07-21 advertisement within 5 seconds"; return @() }
 
-    $device = Wait-JblWinRt ([Windows.Devices.Bluetooth.BluetoothLEDevice]::FromBluetoothAddressAsync($address)) $script:tDevice 2500
-    if (-not $device) { return @() }
+    $device = Wait-JblWinRt ([Windows.Devices.Bluetooth.BluetoothLEDevice]::FromBluetoothAddressAsync($address)) $script:tDevice 4000
+    if (-not $device) { Add-JblFlip7Diag "BluetoothLEDevice creation failed or timed out"; return @() }
+    Add-JblFlip7Diag "BluetoothLEDevice created"
     $serviceId = [Guid]::Parse("65786365-6c70-6f69-6e74-2e636f6d0000")
     $services = Wait-JblWinRt ($device.GetGattServicesForUuidAsync($serviceId, [Windows.Devices.Bluetooth.BluetoothCacheMode]::Uncached)) $script:tServices 2500
-    if (-not $services -or "$($services.Status)" -ne "Success" -or $services.Services.Count -eq 0) { return @() }
+    if (-not $services -or "$($services.Status)" -ne "Success" -or $services.Services.Count -eq 0) { Add-JblFlip7Diag ("GATT service lookup failed: " + $(if($services){"$($services.Status)"}else{"no result"})); return @() }
     $service = $services.Services[0]
+    Add-JblFlip7Diag "control GATT service found"
     $txId = [Guid]::Parse("65786365-6c70-6f69-6e74-2e636f6d0002")
     $rxId = [Guid]::Parse("65786365-6c70-6f69-6e74-2e636f6d0001")
     $txResult = Wait-JblWinRt ($service.GetCharacteristicsForUuidAsync($txId, [Windows.Devices.Bluetooth.BluetoothCacheMode]::Uncached)) $script:tChars 2000
     $rxResult = Wait-JblWinRt ($service.GetCharacteristicsForUuidAsync($rxId, [Windows.Devices.Bluetooth.BluetoothCacheMode]::Uncached)) $script:tChars 2000
-    if (-not $txResult -or -not $rxResult -or $txResult.Characteristics.Count -eq 0 -or $rxResult.Characteristics.Count -eq 0) { return @() }
+    if (-not $txResult -or -not $rxResult -or $txResult.Characteristics.Count -eq 0 -or $rxResult.Characteristics.Count -eq 0) { Add-JblFlip7Diag "GATT TX/RX characteristic lookup failed"; return @() }
     $tx = $txResult.Characteristics[0]; $rx = $rxResult.Characteristics[0]
+    Add-JblFlip7Diag "TX/RX characteristics found"
 
-    $notifyId = "JblFlip7Notify-" + [Guid]::NewGuid().ToString("N")
-    Register-ObjectEvent -InputObject $rx -EventName ValueChanged -SourceIdentifier $notifyId | Out-Null
+    $script:tGattChar = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristic, Windows, ContentType = WindowsRuntime]
+    $script:tGattValueArgs = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattValueChangedEventArgs, Windows, ContentType = WindowsRuntime]
+    $notifyQueue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'
+    $notifyHandler = New-JblWinRtHandler $script:tGattChar $script:tGattValueArgs $notifyQueue
+    $notifyToken = $rx.add_ValueChanged($notifyHandler)
     $cccd = Wait-JblWinRt ($rx.WriteClientCharacteristicConfigurationDescriptorAsync([Windows.Devices.Bluetooth.GenericAttributeProfile.GattClientCharacteristicConfigurationDescriptorValue]::Notify)) $script:tComm 2000
-    if ("$cccd" -ne "Success") { return @() }
+    if ("$cccd" -ne "Success") { Add-JblFlip7Diag ("CCCD subscription failed: " + $cccd); return @() }
+    Add-JblFlip7Diag "notification subscription succeeded"
 
     $writer = New-Object Windows.Storage.Streams.DataWriter
     $writer.WriteBytes([byte[]](0xAA, 0x11, 0x00))
     $buffer = $writer.DetachBuffer()
     $write = Wait-JblWinRt ($tx.WriteValueAsync($buffer, [Windows.Devices.Bluetooth.GenericAttributeProfile.GattWriteOption]::WriteWithResponse)) $script:tComm 2000
-    if ("$write" -ne "Success") { return @() }
+    if ("$write" -ne "Success") { Add-JblFlip7Diag ("battery query write failed: " + $write); return @() }
+    Add-JblFlip7Diag "battery query AA 11 00 written"
 
     $frames = New-Object System.Collections.Generic.List[string]
-    $until = [DateTime]::UtcNow.AddSeconds(2)
+    $until = [DateTime]::UtcNow.AddSeconds(3)
     while ([DateTime]::UtcNow -lt $until -and $frames.Count -lt 32) {
-      $evt = Wait-Event -SourceIdentifier $notifyId -Timeout 0.2
-      if (-not $evt) { continue }
-      try {
-        $value = $evt.SourceArgs[1].CharacteristicValue
-        $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($value)
-        $bytes = New-Object byte[] $reader.UnconsumedBufferLength
-        $reader.ReadBytes($bytes)
-        if ($bytes.Length -gt 0) { $frames.Add([BitConverter]::ToString($bytes).Replace("-", "")) }
-      } finally { Remove-Event -EventIdentifier $evt.EventIdentifier -ErrorAction SilentlyContinue }
+      $valueArgs = $null
+      if (-not $notifyQueue.TryDequeue([ref]$valueArgs)) { Start-Sleep -Milliseconds 50; continue }
+      $value = $valueArgs.CharacteristicValue
+      $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($value)
+      $bytes = New-Object byte[] $reader.UnconsumedBufferLength
+      $reader.ReadBytes($bytes)
+      if ($bytes.Length -gt 0) { $frames.Add([BitConverter]::ToString($bytes).Replace("-", "")) }
     }
-    if ($frames.Count -eq 0) { return @() }
+    if ($frames.Count -eq 0) { Add-JblFlip7Diag "no GATT notification received within 3 seconds"; return @() }
+    Add-JblFlip7Diag ("received " + $frames.Count + " GATT notification frame(s)")
     return [pscustomobject]@{ address = $address; frames = @($frames) }
   } catch {
+    Add-JblFlip7Diag ("exception: " + $_.Exception.Message)
     return @()
   } finally {
     if ($watcher) { try { $watcher.Stop() } catch { } }
-    if ($notifyId) { Unregister-Event -SourceIdentifier $notifyId -ErrorAction SilentlyContinue }
+    if ($watcher -and $scanToken) { try { $watcher.remove_Received($scanToken) } catch { } }
+    if ($rx -and $notifyToken) { try { $rx.remove_ValueChanged($notifyToken) } catch { } }
     if ($service) { try { $service.Dispose() } catch { } }
     if ($device) { try { $device.Dispose() } catch { } }
   }
