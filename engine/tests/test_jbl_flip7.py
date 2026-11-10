@@ -56,8 +56,8 @@ class Flip7ProtocolTests(unittest.TestCase):
     def test_transport_diagnostics_do_not_expose_bluetooth_address_or_exception_text(self):
         self.assertIn("matching Flip 7 advertisement", J.POWERSHELL)
         self.assertIn("unexpected BLE/GATT exception; no reading", J.POWERSHELL)
-        self.assertNotIn("matching advertisement \" + ('{0:X12}' -f $address)", J.POWERSHELL)
-        self.assertNotIn("$_ .Exception.Message", J.POWERSHELL)
+        self.assertNotIn("('{0:X12}' -f $address)", J.POWERSHELL)
+        self.assertNotIn("$_.Exception.Message", J.POWERSHELL)
 
     def test_transport_checks_gatt_properties_and_discards_prequery_notifications(self):
         self.assertIn("CharacteristicProperties", J.POWERSHELL)
