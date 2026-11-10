@@ -12,6 +12,13 @@ def frame(raw):
 
 
 class Flip7ProtocolTests(unittest.TestCase):
+    def test_windows_transport_uses_winrt_event_handlers_not_powershell_events(self):
+        self.assertNotIn("Register-ObjectEvent", J.POWERSHELL)
+        self.assertIn("New-JblWinRtHandler", J.POWERSHELL)
+        self.assertIn("add_Received", J.POWERSHELL)
+        self.assertIn("add_ValueChanged", J.POWERSHELL)
+        self.assertIn("flip7_diag", J.POWERSHELL)
+
     def test_discharge_percent(self):
         self.assertEqual(J.parse_notifications([frame(30)]), (30, False))
 
