@@ -88,7 +88,8 @@ function Get-BtSnapshot {
              ForEach-Object { $null = $_.InstanceId -match '^(BTHENUM|BTHLE)\\DEV_([0-9A-F]{12})'
                               [pscustomobject]@{ le = ($Matches[1] -eq 'BTHLE'); mac = $Matches[2] } })
   $aep = @(Get-BtConn $roots)
-  return [pscustomobject]@{ devs = $list; props = $props; aep = $aep; aep_error = $script:winrtErr; roots = $roots; flip7 = @(Get-JblFlip7Battery) }
+  $flip7 = @(Get-JblFlip7Battery)
+  return [pscustomobject]@{ devs = $list; props = $props; aep = $aep; aep_error = $script:winrtErr; roots = $roots; flip7 = $flip7; flip7_diag = @($script:jblFlip7Diag) }
 }
 
 function Get-ConnKey($aep) { return (@($aep | ForEach-Object { "$($_.addr)=$($_.conn)" }) -join ',') }
@@ -420,6 +421,9 @@ class BluetoothProvider(Provider):
         result = group_devices(data, self._diag, self._levels)
         # Flip 7 battery is a device reply over BLE GATT, not a Windows battery property.
         result.extend(statuses_from_snapshot(data.get("flip7"), self._diag))
+        for item in _as_list(data.get("flip7_diag")):
+            if isinstance(item, str) and item:
+                self._diag.append(item if item.startswith("[JBL Flip 7]") else f"[JBL Flip 7] {item}")
         for status in result:
             if not status.cached:
                 self._observed_at[status.key] = now
