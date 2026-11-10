@@ -132,21 +132,21 @@ function Get-JblFlip7Battery {
     $address = [UInt64]0
     $until = [DateTime]::UtcNow.AddSeconds(3)
     while ([DateTime]::UtcNow -lt $until -and $address -eq 0) {
-      $event = Wait-Event -SourceIdentifier $scanId -Timeout 0.2
-      if (-not $event) { continue }
+      $evt = Wait-Event -SourceIdentifier $scanId -Timeout 0.2
+      if (-not $evt) { continue }
       try {
-        $args = $event.SourceArgs[1]
-        foreach ($manufacturer in $args.Advertisement.ManufacturerData) {
+        $advArgs = $evt.SourceArgs[1]
+        foreach ($manufacturer in $advArgs.Advertisement.ManufacturerData) {
           if ($manufacturer.CompanyId -ne 0x0057) { continue }
           $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($manufacturer.Data)
           $bytes = New-Object byte[] $reader.UnconsumedBufferLength
           $reader.ReadBytes($bytes)
           if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x07 -and $bytes[1] -eq 0x21) {
-            $address = [UInt64]$args.BluetoothAddress
+            $address = [UInt64]$advArgs.BluetoothAddress
             break
           }
         }
-      } finally { Remove-Event -EventIdentifier $event.EventIdentifier -ErrorAction SilentlyContinue }
+      } finally { Remove-Event -EventIdentifier $evt.EventIdentifier -ErrorAction SilentlyContinue }
     }
     $watcher.Stop()
     Unregister-Event -SourceIdentifier $scanId -ErrorAction SilentlyContinue
@@ -190,7 +190,7 @@ function Get-JblFlip7Battery {
       } finally { Remove-Event -EventIdentifier $event.EventIdentifier -ErrorAction SilentlyContinue }
     }
     if ($frames.Count -eq 0) { return @() }
-    return ,@([pscustomobject]@{ address = $address; frames = @($frames) })
+    return [pscustomobject]@{ address = $address; frames = @($frames) }
   } catch {
     return @()
   } finally {
