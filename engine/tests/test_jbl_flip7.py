@@ -53,6 +53,12 @@ class Flip7ProtocolTests(unittest.TestCase):
         corrupt = bytes((0xAA, 0x99, 0x80, 0x01, 0x02))
         self.assertEqual(J.parse_notifications([corrupt + frame(83)]), (83, False))
 
+    def test_transport_diagnostics_do_not_expose_bluetooth_address_or_exception_text(self):
+        self.assertIn("matching Flip 7 advertisement", J.POWERSHELL)
+        self.assertIn("unexpected BLE/GATT exception; no reading", J.POWERSHELL)
+        self.assertNotIn("matching advertisement \" + ('{0:X12}' -f $address)", J.POWERSHELL)
+        self.assertNotIn("$_ .Exception.Message", J.POWERSHELL)
+
     def test_transport_checks_gatt_properties_and_discards_prequery_notifications(self):
         self.assertIn("CharacteristicProperties", J.POWERSHELL)
         self.assertIn("does not support WriteWithResponse", J.POWERSHELL)
