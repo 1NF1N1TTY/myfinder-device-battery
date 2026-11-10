@@ -44,7 +44,10 @@ def parse_notifications(frames: Iterable[bytes]) -> Optional[tuple[int, bool]]:
             if len(pending) < 3:
                 break
             command, size = pending[1], pending[2]
-            if size > 128:
+            # This reader only accepts the fixed three-byte battery-info payload.
+            # Reject unrelated headers immediately; waiting for their advertised
+            # length could let a corrupt prefix hide a valid AA 12 battery frame.
+            if command != INFO_REPLY or size != 3:
                 del pending[0]
                 continue
             total = 3 + size
@@ -52,8 +55,6 @@ def parse_notifications(frames: Iterable[bytes]) -> Optional[tuple[int, bool]]:
                 break
             packet = bytes(pending[:total])
             del pending[:total]
-            if command != INFO_REPLY or size != 3:
-                continue
             if packet[3] != 0x00 or packet[4] != BATTERY_TOKEN:
                 continue
             raw = packet[5]
@@ -164,13 +165,15 @@ function Get-JblFlip7Battery {
       foreach ($manufacturer in $advArgs.Advertisement.ManufacturerData) {
         if ($manufacturer.CompanyId -ne 0x0057) { continue }
         $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($manufacturer.Data)
-        $bytes = New-Object byte[] $reader.UnconsumedBufferLength
-        $reader.ReadBytes($bytes)
-        if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x07 -and $bytes[1] -eq 0x21) {
-          $address = [UInt64]$advArgs.BluetoothAddress
-          Add-JblFlip7Diag ("matching advertisement " + ('{0:X12}' -f $address))
-          break
-        }
+        try {
+          $bytes = New-Object byte[] $reader.UnconsumedBufferLength
+          $reader.ReadBytes($bytes)
+          if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x07 -and $bytes[1] -eq 0x21) {
+            $address = [UInt64]$advArgs.BluetoothAddress
+            Add-JblFlip7Diag ("matching advertisement " + ('{0:X12}' -f $address))
+            break
+          }
+        } finally { $reader.Dispose() }
       }
     }
     $watcher.Stop()
@@ -191,7 +194,11 @@ function Get-JblFlip7Battery {
     $rxResult = Wait-JblWinRt ($service.GetCharacteristicsForUuidAsync($rxId, [Windows.Devices.Bluetooth.BluetoothCacheMode]::Uncached)) $script:tChars 2000
     if (-not $txResult -or -not $rxResult -or $txResult.Characteristics.Count -eq 0 -or $rxResult.Characteristics.Count -eq 0) { Add-JblFlip7Diag "GATT TX/RX characteristic lookup failed"; return @() }
     $tx = $txResult.Characteristics[0]; $rx = $rxResult.Characteristics[0]
-    Add-JblFlip7Diag "TX/RX characteristics found"
+    $txProperties = [int]$tx.CharacteristicProperties
+    $rxProperties = [int]$rx.CharacteristicProperties
+    if (($txProperties -band 0x08) -eq 0) { Add-JblFlip7Diag "GATT TX characteristic does not support WriteWithResponse"; return @() }
+    if (($rxProperties -band 0x10) -eq 0) { Add-JblFlip7Diag "GATT RX characteristic does not support Notify"; return @() }
+    Add-JblFlip7Diag "TX WriteWithResponse and RX Notify properties confirmed"
 
     $script:tGattChar = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristic, Windows, ContentType = WindowsRuntime]
     $script:tGattValueArgs = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattValueChangedEventArgs, Windows, ContentType = WindowsRuntime]
@@ -201,10 +208,15 @@ function Get-JblFlip7Battery {
     $cccd = Wait-JblWinRt ($rx.WriteClientCharacteristicConfigurationDescriptorAsync([Windows.Devices.Bluetooth.GenericAttributeProfile.GattClientCharacteristicConfigurationDescriptorValue]::Notify)) $script:tComm 2000
     if ("$cccd" -ne "Success") { Add-JblFlip7Diag ("CCCD subscription failed: " + $cccd); return @() }
     Add-JblFlip7Diag "notification subscription succeeded"
+    # Drop any notification queued during CCCD setup; only post-query frames
+    # may satisfy this battery request.
+    $stale = $null
+    while ($notifyQueue.TryDequeue([ref]$stale)) { }
 
     $writer = New-Object Windows.Storage.Streams.DataWriter
     $writer.WriteBytes([byte[]](0xAA, 0x11, 0x00))
     $buffer = $writer.DetachBuffer()
+    $writer.Dispose()
     $write = Wait-JblWinRt ($tx.WriteValueAsync($buffer, [Windows.Devices.Bluetooth.GenericAttributeProfile.GattWriteOption]::WriteWithResponse)) $script:tComm 2000
     if ("$write" -ne "Success") { Add-JblFlip7Diag ("battery query write failed: " + $write); return @() }
     Add-JblFlip7Diag "battery query AA 11 00 written"
@@ -216,9 +228,11 @@ function Get-JblFlip7Battery {
       if (-not $notifyQueue.TryDequeue([ref]$valueArgs)) { Start-Sleep -Milliseconds 50; continue }
       $value = $valueArgs.CharacteristicValue
       $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($value)
-      $bytes = New-Object byte[] $reader.UnconsumedBufferLength
-      $reader.ReadBytes($bytes)
-      if ($bytes.Length -gt 0) { $frames.Add([BitConverter]::ToString($bytes).Replace("-", "")) }
+      try {
+        $bytes = New-Object byte[] $reader.UnconsumedBufferLength
+        $reader.ReadBytes($bytes)
+        if ($bytes.Length -gt 0) { $frames.Add([BitConverter]::ToString($bytes).Replace("-", "")) }
+      } finally { $reader.Dispose() }
     }
     if ($frames.Count -eq 0) { Add-JblFlip7Diag "no GATT notification received within 3 seconds"; return @() }
     Add-JblFlip7Diag ("received " + $frames.Count + " GATT notification frame(s)")
