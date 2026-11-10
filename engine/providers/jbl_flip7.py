@@ -119,10 +119,10 @@ function Get-JblFlip7Battery {
   $watcher = $null; $device = $null; $service = $null
   $tx = $null; $rx = $null; $notifyId = $null
   try {
-    $script:tDevice = [Windows.Devices.Bluetooth.BluetoothLEDevice, Windows, ContentType = WindowsRuntime]
-    $script:tServices = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceServicesResult, Windows, ContentType = WindowsRuntime]
-    $script:tChars = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicsResult, Windows, ContentType = WindowsRuntime]
-    $script:tComm = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus, Windows, ContentType = WindowsRuntime]
+    $script:tDevice = [Windows.Devices.Bluetooth.BluetoothLEDevice, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
+    $script:tServices = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceServicesResult, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
+    $script:tChars = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicsResult, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
+    $script:tComm = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
 
     $watcher = New-Object Windows.Devices.Bluetooth.Advertisement.BluetoothLEAdvertisementWatcher
     $watcher.ScanningMode = [Windows.Devices.Bluetooth.Advertisement.BluetoothLEScanningMode]::Active
@@ -179,15 +179,15 @@ function Get-JblFlip7Battery {
     $frames = New-Object System.Collections.Generic.List[string]
     $until = [DateTime]::UtcNow.AddSeconds(2)
     while ([DateTime]::UtcNow -lt $until -and $frames.Count -lt 32) {
-      $event = Wait-Event -SourceIdentifier $notifyId -Timeout 0.2
-      if (-not $event) { continue }
+      $evt = Wait-Event -SourceIdentifier $notifyId -Timeout 0.2
+      if (-not $evt) { continue }
       try {
-        $value = $event.SourceArgs[1].CharacteristicValue
+        $value = $evt.SourceArgs[1].CharacteristicValue
         $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($value)
         $bytes = New-Object byte[] $reader.UnconsumedBufferLength
         $reader.ReadBytes($bytes)
         if ($bytes.Length -gt 0) { $frames.Add([BitConverter]::ToString($bytes).Replace("-", "")) }
-      } finally { Remove-Event -EventIdentifier $event.EventIdentifier -ErrorAction SilentlyContinue }
+      } finally { Remove-Event -EventIdentifier $evt.EventIdentifier -ErrorAction SilentlyContinue }
     }
     if ($frames.Count -eq 0) { return @() }
     return [pscustomobject]@{ address = $address; frames = @($frames) }
