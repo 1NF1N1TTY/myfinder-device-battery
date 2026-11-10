@@ -388,12 +388,14 @@
     },
     {
       "provider": "jbl",
-      "name": "JBL Quantum 910 已列明变体",
+      "name": "JBL Quantum 910 Wireless / JBL Flip 7",
       "kinds": [
         "headset"
       ],
       "verificationLevel": "C",
-      "source": "engine/providers/jbl.py"
+      "source": "engine/providers/jbl.py",
+      "matchScope": "Quantum 910仅限0ECB:2088既有HID接收器；Flip 7仅限JBL BLE manufacturer company ID 0057、advertised PID 2107、控制服务65786365-6c70-6f69-6e74-2e636f6d0000；订阅特征0001，仅发送AA 11 00，只解析AA 12 token 44的低7位百分比与高位充电标志；BLE地址仅作本地会话标识，扫描/连接/通知均有界；不发送EQ、配对、设置或OTA命令；协议依据ffrafat/JBLControl，待本项目Flip 7实机验证",
+      "reference": "engine/upstream-protocols.md#jbl-flip-7-ble"
     },
     {
       "provider": "fa6x_passive",
