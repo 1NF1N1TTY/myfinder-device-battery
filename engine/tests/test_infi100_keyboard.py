@@ -79,7 +79,7 @@ class Infi100KeyboardTests(unittest.TestCase):
             self.assertEqual(status.level, 100)
             self.assertEqual(bus.writes, [(entry()["path"], I.make_request())])
 
-        duplicate = entry(path=b"\\\\?\\hid#vid_05ac&pid_024f&mi_03#second")
+        duplicate = entry(path=b"\\\\?\\hid#vid_05ac&pid_024f&mi_03&col01#second")
         with fixture([reply()], [entry(), duplicate]) as bus:
             self.assertEqual(P().poll(), [])
         self.assertEqual(bus.opened, [])
