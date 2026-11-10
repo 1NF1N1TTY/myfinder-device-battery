@@ -170,7 +170,7 @@ function Get-JblFlip7Battery {
           $reader.ReadBytes($bytes)
           if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x07 -and $bytes[1] -eq 0x21) {
             $address = [UInt64]$advArgs.BluetoothAddress
-            Add-JblFlip7Diag ("matching advertisement " + ('{0:X12}' -f $address))
+            Add-JblFlip7Diag "matching Flip 7 advertisement"
             break
           }
         } finally { $reader.Dispose() }
@@ -238,7 +238,8 @@ function Get-JblFlip7Battery {
     Add-JblFlip7Diag ("received " + $frames.Count + " GATT notification frame(s)")
     return [pscustomobject]@{ address = $address; frames = @($frames) }
   } catch {
-    Add-JblFlip7Diag ("exception: " + $_.Exception.Message)
+    # WinRT exception text can contain local Bluetooth addresses or device data.
+    Add-JblFlip7Diag "unexpected BLE/GATT exception; no reading"
     return @()
   } finally {
     if ($watcher) { try { $watcher.Stop() } catch { } }
