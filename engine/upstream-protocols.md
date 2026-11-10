@@ -3911,3 +3911,24 @@ remaining hardware acceptance are recorded in `docs/zhuaudio-zg4.md`.
 The provider reads HID++ 2.0 generically from the receiver's `ff00` vendor collections (slots 1-6), so most other HID++ 2.0 mice and keyboards on a Lightspeed, Unifying or Bolt receiver should answer the same `0x1004` unified battery request. The G-series headsets - G533, G535, G633, G635, G733, G933, G935, G PRO, G PRO X - are in the headset pid table and use feature `0x1F20` (the G535 on its consumer collection). Only the models listed in the support table above are confirmed so far.
 
 Devices with no feature table at all (the older HID++ 1.0 generation) are read through the old battery registers instead: a short report `10 <slot> 81 <register>` on the short collection reads register `0x0D` (a percentage with a charging status - `30` discharging, `50` recharging, `90` full) or register `0x07` (a discrete level - 7 full, 5 good, 3 low, 1 critical - beside a charging byte), the same registers and order Solaar uses. This was added for the M710 keyboard of the MK710 wireless desktop ([#159](https://github.com/HeyOkay/HaloBattery/issues/159)), built from Solaar's implementation; **confirmed on hardware** in the reporter's test-build run - the icon shows the keyboard's coarse level.
+
+
+### INFI100 2.4G keyboard receiver (05AC:024F)
+
+**B / USBPcap-confirmed against one INFI100 receiver.** The OEM configuration
+identifies the wireless receiver as interface MI_03, product string
+`2.4G Wireless Keyboard`, HID collection `FF60:0061`. The USBPcap trace shows
+32-byte interrupt OUT/IN reports on endpoint 0x05/0x85. The captured battery
+query is `20 01 00`, 28 zero bytes, then `21`. A matching 32-byte response
+starts `20 01 00`; byte 3 (zero-based) is the percentage. Three independent
+observations matched the OEM driver's display: `64` (100%), `61` (97%), and
+`60` (96%). The response trailer varied (`85`, `82`, `81`) and is not
+interpreted as a checksum or status field.
+
+The reader is deliberately restricted to VID/PID `05AC:024F`, the exact
+product string, MI_03 HID path, and collection `FF60:0061`; it requires
+descriptor-proven 32-byte report ID `20` in both directions. It sends only
+the captured battery query. Charging state and trailer semantics remain
+unknown; no settings, lighting, pairing, or feature-report commands are sent.
+The adapter has fixture coverage but still needs a live MyFinder/INFI100
+hardware validation before being treated as fully verified.
