@@ -196,16 +196,27 @@ function Get-JblFlip7Battery {
     $tx = $txResult.Characteristics[0]; $rx = $rxResult.Characteristics[0]
     $txProperties = [int]$tx.CharacteristicProperties
     $rxProperties = [int]$rx.CharacteristicProperties
-    if (($txProperties -band 0x08) -eq 0) { Add-JblFlip7Diag "GATT TX characteristic does not support WriteWithResponse"; return @() }
-    if (($rxProperties -band 0x10) -eq 0) { Add-JblFlip7Diag "GATT RX characteristic does not support Notify"; return @() }
-    Add-JblFlip7Diag "TX WriteWithResponse and RX Notify properties confirmed"
+    if (($txProperties -band 0x08) -ne 0) {
+      $writeOption = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattWriteOption]::WriteWithResponse
+      Add-JblFlip7Diag "GATT TX supports WriteWithResponse"
+    } elseif (($txProperties -band 0x04) -ne 0) {
+      $writeOption = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattWriteOption]::WriteWithoutResponse
+      Add-JblFlip7Diag "GATT TX supports WriteWithoutResponse"
+    } else { Add-JblFlip7Diag "GATT TX characteristic has no supported write property"; return @() }
+    if (($rxProperties -band 0x10) -ne 0) {
+      $cccdValue = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattClientCharacteristicConfigurationDescriptorValue]::Notify
+      Add-JblFlip7Diag "GATT RX supports Notify"
+    } elseif (($rxProperties -band 0x20) -ne 0) {
+      $cccdValue = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattClientCharacteristicConfigurationDescriptorValue]::Indicate
+      Add-JblFlip7Diag "GATT RX supports Indicate"
+    } else { Add-JblFlip7Diag "GATT RX characteristic has no notification property"; return @() }
 
     $script:tGattChar = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristic, Windows, ContentType = WindowsRuntime]
     $script:tGattValueArgs = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattValueChangedEventArgs, Windows, ContentType = WindowsRuntime]
     $notifyQueue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'
     $notifyHandler = New-JblWinRtHandler $script:tGattChar $script:tGattValueArgs $notifyQueue
     $notifyToken = $rx.add_ValueChanged($notifyHandler)
-    $cccd = Wait-JblWinRt ($rx.WriteClientCharacteristicConfigurationDescriptorAsync([Windows.Devices.Bluetooth.GenericAttributeProfile.GattClientCharacteristicConfigurationDescriptorValue]::Notify)) $script:tComm 2000
+    $cccd = Wait-JblWinRt ($rx.WriteClientCharacteristicConfigurationDescriptorAsync($cccdValue)) $script:tComm 2000
     if ("$cccd" -ne "Success") { Add-JblFlip7Diag ("CCCD subscription failed: " + $cccd); return @() }
     Add-JblFlip7Diag "notification subscription succeeded"
     # Drop any notification queued during CCCD setup; only post-query frames
@@ -217,7 +228,7 @@ function Get-JblFlip7Battery {
     $writer.WriteBytes([byte[]](0xAA, 0x11, 0x00))
     $buffer = $writer.DetachBuffer()
     $writer.Dispose()
-    $write = Wait-JblWinRt ($tx.WriteValueAsync($buffer, [Windows.Devices.Bluetooth.GenericAttributeProfile.GattWriteOption]::WriteWithResponse)) $script:tComm 2000
+    $write = Wait-JblWinRt ($tx.WriteValueAsync($buffer, $writeOption)) $script:tComm 2000
     if ("$write" -ne "Success") { Add-JblFlip7Diag ("battery query write failed: " + $write); return @() }
     Add-JblFlip7Diag "battery query AA 11 00 written"
 
