@@ -5,6 +5,8 @@ The receiver exposes a vendor HID collection FF60:0061 (MI_03), report ID
 sent; byte 3 of a matching response is the percentage. The trailing response
 byte is intentionally not interpreted.
 """
+import re
+
 from battery_hid import BatteryHidProvider
 
 VID = 0x05AC
@@ -40,18 +42,23 @@ class Infi100KeyboardProvider(BatteryHidProvider):
     parse_reply = staticmethod(parse_reply)
 
     def _pick(self, infos):
-        # Filter by the OEM-identified wireless interface BEFORE the generic
-        # collection selector runs. The same FF60:0061 usage can occur on
-        # sibling interfaces; counting those first would reject a valid MI_03.
-        wireless = []
+        # Match the OEM-identified wireless interface before collection selection.
+        # Windows HID paths can spell the MI_03 boundary with either '&' or '#'.
+        mi03 = []
         for info in infos:
             path = info.get("path")
             if isinstance(path, bytes):
                 path = path.decode("utf-8", "replace")
-            if (isinstance(path, str) and "&mi_03&" in path.lower()
-                    and info.get("product_string") == PRODUCT_STRING):
-                wireless.append(info)
-        if not wireless:
+            if isinstance(path, str) and re.search(r"(?:^|[&#])mi_03(?:[&#]|$)", path, re.I):
+                mi03.append(info)
+        if not mi03:
             self._diag.append("configured MI_03 receiver interface not found: nothing sent")
+            return None
+
+        wireless = [info for info in mi03
+                    if isinstance(info.get("product_string"), str)
+                    and info["product_string"].strip().casefold() == PRODUCT_STRING.casefold()]
+        if not wireless:
+            self._diag.append("configured MI_03 product string not found: nothing sent")
             return None
         return super()._pick(wireless)
