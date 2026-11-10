@@ -29,7 +29,7 @@ BRAND_PROVIDERS = frozenset((
     "cherry",
     "lingbao",
     "g3m", "eweadn", "eweadn_s9pro", "flydigi",
-    "vgn_keyboard", "vgn_beiying",
+    "vgn_keyboard", "vgn_beiying", "infi100_keyboard",
     "vgn_dragonfly3", "ninjutso_legacy",
     "dareu",
     "fa6x_passive",
