@@ -13,7 +13,7 @@ P = I.Infi100KeyboardProvider
 
 def entry(physical="infi100-receiver", **changes):
     changes.setdefault("product_string", I.PRODUCT_STRING)
-    changes.setdefault("path", (r"\\?\hid#vid_05ac&pid_024f&mi_03#" + physical).encode())
+    changes.setdefault("path", (r"\\?\hid#vid_05ac&pid_024f&mi_03&col01#" + physical).encode())
     return hid_entry(P, physical, **changes)
 
 
