@@ -49,6 +49,17 @@ class Flip7ProtocolTests(unittest.TestCase):
         self.assertEqual(J.parse_notifications([packet[:2], packet[2:4], packet[4:]]),
                          (10, True))
 
+    def test_invalid_long_length_header_cannot_hide_following_battery_frame(self):
+        corrupt = bytes((0xAA, 0x99, 0x80, 0x01, 0x02))
+        self.assertEqual(J.parse_notifications([corrupt + frame(83)]), (83, False))
+
+    def test_transport_checks_gatt_properties_and_discards_prequery_notifications(self):
+        self.assertIn("CharacteristicProperties", J.POWERSHELL)
+        self.assertIn("does not support WriteWithResponse", J.POWERSHELL)
+        self.assertIn("does not support Notify", J.POWERSHELL)
+        self.assertIn("Drop any notification queued during CCCD setup", J.POWERSHELL)
+        self.assertIn("New-JblWinRtHandler", J.POWERSHELL)
+
     def test_concatenated_frames_find_battery_token(self):
         other = bytes((0xAA, 0x12, 0x03, 0x00, 0x43, 0x01))
         self.assertEqual(J.parse_notifications([other + frame(75)]), (75, False))
