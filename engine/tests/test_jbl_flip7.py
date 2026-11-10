@@ -61,8 +61,10 @@ class Flip7ProtocolTests(unittest.TestCase):
 
     def test_transport_checks_gatt_properties_and_discards_prequery_notifications(self):
         self.assertIn("CharacteristicProperties", J.POWERSHELL)
-        self.assertIn("does not support WriteWithResponse", J.POWERSHELL)
-        self.assertIn("does not support Notify", J.POWERSHELL)
+        self.assertIn("WriteWithResponse", J.POWERSHELL)
+        self.assertIn("WriteWithoutResponse", J.POWERSHELL)
+        self.assertIn("::Notify", J.POWERSHELL)
+        self.assertIn("::Indicate", J.POWERSHELL)
         self.assertIn("Drop any notification queued during CCCD setup", J.POWERSHELL)
         self.assertIn("New-JblWinRtHandler", J.POWERSHELL)
 
