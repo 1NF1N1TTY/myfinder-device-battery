@@ -32,7 +32,7 @@ class Infi100KeyboardTests(unittest.TestCase):
     def test_captured_request_and_known_battery_percentages(self):
         expected = [0x20, 0x01, 0x00] + [0] * 28 + [0x21]
         self.assertEqual(I.make_request(), expected)
-        for level, trailer in ((100, 0x85), (97, 0x82), (96, 0x81)):
+        for level, trailer in ((100, 0x85), (97, 0x82), (96, 0x81), (83, 0x74)):
             with self.subTest(level=level), fixture([reply(level, trailer)]) as bus:
                 status, = P().poll()
                 self.assertEqual((status.level, status.kind, status.source,
@@ -69,6 +69,29 @@ class Infi100KeyboardTests(unittest.TestCase):
         for changes in defects:
             with self.subTest(changes=changes), fixture([reply()], [entry(**changes)]) as bus:
                 self.assertEqual(P().poll(), [])
+                self.assertEqual(bus.opened, [])
+                self.assertEqual(bus.writes, [])
+
+    def test_mi03_path_separator_and_product_string_case_are_tolerated(self):
+        alternate = entry(path=b"\\\\?\\hid#vid_05ac&pid_024f&MI_03#wireless",
+                          product_string="2.4g wireless keyboard")
+        with fixture([reply(83, 0x74)], [alternate]) as bus:
+            status, = P().poll()
+            self.assertEqual(status.level, 83)
+            self.assertEqual(bus.writes, [(alternate["path"], I.make_request())])
+
+    def test_missing_mi03_or_product_string_has_safe_diagnostic(self):
+        cases = [
+            (entry(path=b"\\\\?\\hid#vid_05ac&pid_024f&mi_00#wired"),
+             "configured MI_03 receiver interface not found: nothing sent"),
+            (entry(product_string="Unknown Keyboard"),
+             "configured MI_03 product string not found: nothing sent"),
+        ]
+        for info, expected in cases:
+            with self.subTest(expected=expected), fixture([reply()], [info]) as bus:
+                provider = P()
+                self.assertEqual(provider.poll(), [])
+                self.assertIn(expected, provider.diagnostics())
                 self.assertEqual(bus.opened, [])
                 self.assertEqual(bus.writes, [])
 
