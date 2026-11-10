@@ -17,7 +17,7 @@ class Flip7ProtocolTests(unittest.TestCase):
         self.assertIn("New-JblWinRtHandler", J.POWERSHELL)
         self.assertIn("add_Received", J.POWERSHELL)
         self.assertIn("add_ValueChanged", J.POWERSHELL)
-        self.assertIn("flip7_diag", J.POWERSHELL)
+        self.assertIn("no GATT notification", J.POWERSHELL)
 
     def test_discharge_percent(self):
         self.assertEqual(J.parse_notifications([frame(30)]), (30, False))
