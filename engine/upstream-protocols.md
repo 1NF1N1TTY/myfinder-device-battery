@@ -3932,3 +3932,25 @@ the captured battery query. Charging state and trailer semantics remain
 unknown; no settings, lighting, pairing, or feature-report commands are sent.
 The adapter has fixture coverage but still needs a live MyFinder/INFI100
 hardware validation before being treated as fully verified.
+
+### JBL Flip 7 BLE battery (PID 0x2107)
+
+**C / upstream protocol evidence; MyFinder integration awaits Flip 7 hardware acceptance.**
+Based on [ffrafat/JBLControl](https://github.com/ffrafat/JBLControl/blob/main/docs/PROTOCOL-FLIP7.md),
+which records a real Flip 7 (PID 2107, firmware 0.7.2.0) observation on 2026-10-10.
+The advertisement uses manufacturer company ID 0x0057 and product ID 0x2107
+(little-endian bytes 07 21). The control GATT service is
+`65786365-6c70-6f69-6e74-2e636f6d0000`; characteristic `...0001`
+is notification/read and `...0002` is write.
+
+The reader scans for the exact manufacturer company/PID, connects to the
+advertised BLE address, subscribes to notifications, and sends only
+`AA 11 00`. It accepts only a complete `AA 12 03 00 44 XX` info frame:
+the low seven bits of XX are battery percentage (0..100), and bit 7 means
+charging. Notification chunks are reassembled within a bounded buffer.
+No EQ, firmware, pairing, settings, reset, or OTA commands are sent.
+The address is a local session key and is never exported in the device name.
+The existing Bluetooth worker provides the process lifetime boundary.
+CI protocol fixtures validate frame parsing; actual Windows GATT transport,
+driver coexistence, reconnect behavior, and MyFinder display still require
+testing with a real Flip 7.
