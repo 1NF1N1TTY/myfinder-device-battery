@@ -42,8 +42,17 @@ class Infi100KeyboardProvider(BatteryHidProvider):
     def _pick(self, infos):
         info = super()._pick(infos)
         if info is not None:
+            path = info.get("path")
+            if isinstance(path, bytes):
+                path = path.decode("utf-8", "replace")
+            # The vendor collection FF60:0061 is present on more than one
+            # interface. The OEM configuration identifies the wireless receiver
+            # specifically as MI_03; never query the sibling collection.
+            if not isinstance(path, str) or "&mi_03&" not in path.lower():
+                self._diag.append("not the configured MI_03 interface: nothing sent")
+                return None
             product = info.get("product_string")
-            if product and product != PRODUCT_STRING:
+            if product != PRODUCT_STRING:
                 self._diag.append("unexpected product string: nothing sent")
                 return None
         return info
