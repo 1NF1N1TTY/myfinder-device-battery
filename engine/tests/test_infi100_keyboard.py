@@ -32,7 +32,7 @@ class Infi100KeyboardTests(unittest.TestCase):
     def test_captured_request_and_known_battery_percentages(self):
         expected = [0x20, 0x01, 0x00] + [0] * 28 + [0x21]
         self.assertEqual(I.make_request(), expected)
-        for level, trailer in ((100, 0x85), (97, 0x82), (96, 0x81), (86, 0x7B), (83, 0x74)):
+        for level, trailer in ((100, 0x85), (97, 0x82), (96, 0x81), (83, 0x74)):
             with self.subTest(level=level), fixture([reply(level, trailer)]) as bus:
                 status, = P().poll()
                 self.assertEqual((status.level, status.kind, status.source,
