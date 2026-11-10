@@ -3920,16 +3920,16 @@ identifies the wireless receiver as interface MI_03, product string
 `2.4G Wireless Keyboard`, HID collection `FF60:0061`. The USBPcap trace shows
 32-byte interrupt OUT/IN reports on endpoint 0x05/0x85. The captured battery
 query is `20 01 00`, 28 zero bytes, then `21`. A matching 32-byte response
-starts `20 01 00`; byte 3 (zero-based) is the percentage. Five independent
+starts `20 01 00`; byte 3 (zero-based) is the percentage. Four paired
 observations matched the OEM driver's display: `64` (100%), `61` (97%),
-`60` (96%), `56` (86%), and `53` (83%). In the latest paired capture,
-the OEM display was 83% and the IN response was
-`20 01 00 53 00 00 00 ... 00 74`; a separate capture at 86% returned
-`20 01 00 56 00 30 00 AC ... 00 E1` on the same 32-byte report. The fourth
-byte therefore tracks the displayed percentage across additional levels.
-The response trailer varied (`85`, `82`, `81`, `74`, `E1`) and is not
-interpreted as a checksum or status field. A different HID collection also
-produced an unrelated `02`-prefixed report; it is not the battery request.
+`60` (96%), and `53` (83%). In the latest paired capture, the OEM display
+was 83% and the IN response was
+`20 01 00 53 00 00 00 ... 00 74`. The earlier 86% observation was not paired
+with a captured `20 01 00 ... 21` query/response, so it is not counted as
+protocol evidence. The response trailer varied (`85`, `82`, `81`, `74`)
+and is not interpreted as a checksum or status field. A different HID
+collection also produced an unrelated `02`-prefixed report; it is not the
+battery request.
 
 The reader is deliberately restricted to VID/PID `05AC:024F`, the exact
 product string, MI_03 HID path, and collection `FF60:0061`; it requires
