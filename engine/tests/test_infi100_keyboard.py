@@ -72,8 +72,15 @@ class Infi100KeyboardTests(unittest.TestCase):
                 self.assertEqual(bus.opened, [])
                 self.assertEqual(bus.writes, [])
 
-    def test_duplicate_eligible_collections_do_not_send(self):
-        with fixture([reply()], [entry(), entry(path=b"second-interface")]) as bus:
+    def test_sibling_interface_is_ignored_but_duplicate_mi03_is_rejected(self):
+        sibling = entry(path=b"\\\\?\\hid#vid_05ac&pid_024f&mi_00#wired")
+        with fixture([reply()], [entry(), sibling]) as bus:
+            status, = P().poll()
+            self.assertEqual(status.level, 100)
+            self.assertEqual(bus.writes, [(entry()["path"], I.make_request())])
+
+        duplicate = entry(path=b"\\\\?\\hid#vid_05ac&pid_024f&mi_03#second")
+        with fixture([reply()], [entry(), duplicate]) as bus:
             self.assertEqual(P().poll(), [])
         self.assertEqual(bus.opened, [])
         self.assertEqual(bus.writes, [])
