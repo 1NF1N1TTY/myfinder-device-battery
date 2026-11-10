@@ -138,7 +138,7 @@ function Add-JblFlip7Diag($message) {
 
 function Get-JblFlip7Battery {
   $watcher = $null; $device = $null; $service = $null
-  $tx = $null; $rx = $null; $scanToken = $null; $notifyToken = $null
+  $tx = $null; $rx = $null; $writer = $null; $scanToken = $null; $notifyToken = $null
   $scanHandler = $null; $notifyHandler = $null
   $scanQueue = $null; $notifyQueue = $null
   $script:jblFlip7Diag = @()
@@ -227,7 +227,7 @@ function Get-JblFlip7Battery {
     $writer = New-Object Windows.Storage.Streams.DataWriter
     $writer.WriteBytes([byte[]](0xAA, 0x11, 0x00))
     $buffer = $writer.DetachBuffer()
-    $writer.Dispose()
+    $writer.Dispose(); $writer = $null
     $write = Wait-JblWinRt ($tx.WriteValueAsync($buffer, $writeOption)) $script:tComm 2000
     if ("$write" -ne "Success") { Add-JblFlip7Diag ("battery query write failed: " + $write); return @() }
     Add-JblFlip7Diag "battery query AA 11 00 written"
@@ -256,6 +256,7 @@ function Get-JblFlip7Battery {
     if ($watcher) { try { $watcher.Stop() } catch { } }
     if ($watcher -and $scanToken) { try { $watcher.remove_Received($scanToken) } catch { } }
     if ($rx -and $notifyToken) { try { $rx.remove_ValueChanged($notifyToken) } catch { } }
+    if ($writer) { try { $writer.Dispose() } catch { } }
     if ($service) { try { $service.Dispose() } catch { } }
     if ($device) { try { $device.Dispose() } catch { } }
   }
